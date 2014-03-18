@@ -48,13 +48,7 @@ extern CheckEventBlockedByModalComps isEventBlockedByModalComps;
 
 static bool shouldDeactivateTitleBar = true;
 
-void* getUser32Function (const char* functionName) // (NB: this function also used from other modules)
-{
-    HMODULE user32Mod = GetModuleHandleA ("user32.dll");
-    jassert (user32Mod != 0);
-
-    return (void*) GetProcAddress (user32Mod, functionName);
-}
+extern void* getUser32Function (const char*);
 
 //==============================================================================
 typedef BOOL (WINAPI* UpdateLayeredWinFunc) (HWND, HDC, POINT*, SIZE*, HDC, POINT*, COLORREF, BLENDFUNCTION*, DWORD);
@@ -108,17 +102,38 @@ bool Desktop::canUseSemiTransparentWindows() noexcept
 
 #endif
 
+#ifndef MONITOR_DPI_TYPE
+  enum Monitor_DPI_Type
+  {
+    MDT_Effective_DPI  = 0,
+    MDT_Angular_DPI    = 1,
+    MDT_Raw_DPI        = 2,
+    MDT_Default        = MDT_Effective_DPI
+  };
+
+  enum Process_DPI_Awareness
+  {
+    Process_DPI_Unaware            = 0,
+    Process_System_DPI_Aware       = 1,
+    Process_Per_Monitor_DPI_Aware  = 2
+  };
+#endif
+
 typedef BOOL (WINAPI* RegisterTouchWindowFunc) (HWND, ULONG);
 typedef BOOL (WINAPI* GetTouchInputInfoFunc) (HTOUCHINPUT, UINT, TOUCHINPUT*, int);
 typedef BOOL (WINAPI* CloseTouchInputHandleFunc) (HTOUCHINPUT);
 typedef BOOL (WINAPI* GetGestureInfoFunc) (HGESTUREINFO, GESTUREINFO*);
 typedef BOOL (WINAPI* SetProcessDPIAwareFunc)();
+typedef BOOL (WINAPI* SetProcessDPIAwarenessFunc) (Process_DPI_Awareness);
+typedef HRESULT (WINAPI* GetDPIForMonitorFunc) (HMONITOR, Monitor_DPI_Type, UINT*, UINT*);
 
-static RegisterTouchWindowFunc   registerTouchWindow = nullptr;
-static GetTouchInputInfoFunc     getTouchInputInfo = nullptr;
-static CloseTouchInputHandleFunc closeTouchInputHandle = nullptr;
-static GetGestureInfoFunc        getGestureInfo = nullptr;
-static SetProcessDPIAwareFunc    setProcessDPIAware = nullptr;
+static RegisterTouchWindowFunc    registerTouchWindow = nullptr;
+static GetTouchInputInfoFunc      getTouchInputInfo = nullptr;
+static CloseTouchInputHandleFunc  closeTouchInputHandle = nullptr;
+static GetGestureInfoFunc         getGestureInfo = nullptr;
+static SetProcessDPIAwareFunc     setProcessDPIAware = nullptr;
+static SetProcessDPIAwarenessFunc setProcessDPIAwareness = nullptr;
+static GetDPIForMonitorFunc       getDPIForMonitor = nullptr;
 
 static bool hasCheckedForMultiTouch = false;
 
@@ -164,17 +179,33 @@ static void setDPIAwareness()
 {
     if (JUCEApplicationBase::isStandaloneApp())
     {
-        if (setProcessDPIAware == nullptr)
+        if (setProcessDPIAwareness == nullptr)
         {
-            setProcessDPIAware = (SetProcessDPIAwareFunc) getUser32Function ("SetProcessDPIAware");
+            HMODULE shcoreModule = GetModuleHandleA ("SHCore.dll");
 
-            if (setProcessDPIAware != nullptr)
-                setProcessDPIAware();
+            if (shcoreModule != 0)
+            {
+                setProcessDPIAwareness = (SetProcessDPIAwarenessFunc) GetProcAddress (shcoreModule, "SetProcessDpiAwareness");
+                getDPIForMonitor = (GetDPIForMonitorFunc) GetProcAddress (shcoreModule, "GetDpiForMonitor");
+
+                if (setProcessDPIAwareness != nullptr && getDPIForMonitor != nullptr
+//                     && SUCCEEDED (setProcessDPIAwareness (Process_Per_Monitor_DPI_Aware)))
+                     && SUCCEEDED (setProcessDPIAwareness (Process_System_DPI_Aware))) // (keep using this mode temporarily..)
+                    return;
+            }
+
+            if (setProcessDPIAware == nullptr)
+            {
+                setProcessDPIAware = (SetProcessDPIAwareFunc) getUser32Function ("SetProcessDPIAware");
+
+                if (setProcessDPIAware != nullptr)
+                    setProcessDPIAware();
+            }
         }
     }
 }
 
-static double getDPI()
+static double getGlobalDPI()
 {
     setDPIAwareness();
 
@@ -187,7 +218,8 @@ static double getDPI()
 
 double Desktop::getDefaultMasterScale()
 {
-    return getDPI() / 96.0;
+    return JUCEApplicationBase::isStandaloneApp() ? getGlobalDPI() / 96.0
+                                                  : 1.0;
 }
 
 //==============================================================================
@@ -333,15 +365,19 @@ public:
 
     LowLevelGraphicsContext* createLowLevelContext() override
     {
+        sendDataChangeMessage();
         return new LowLevelGraphicsSoftwareRenderer (Image (this));
     }
 
-    void initialiseBitmapData (Image::BitmapData& bitmap, int x, int y, Image::BitmapData::ReadWriteMode) override
+    void initialiseBitmapData (Image::BitmapData& bitmap, int x, int y, Image::BitmapData::ReadWriteMode mode) override
     {
         bitmap.data = imageData + x * pixelStride + y * lineStride;
         bitmap.pixelFormat = pixelFormat;
         bitmap.lineStride = lineStride;
         bitmap.pixelStride = pixelStride;
+
+        if (mode != Image::BitmapData::readOnly)
+            sendDataChangeMessage();
     }
 
     ImagePixelData* clone() override
@@ -535,7 +571,8 @@ public:
         setTitle (component.getName());
 
         if ((windowStyleFlags & windowHasDropShadow) != 0
-             && Desktop::canUseSemiTransparentWindows())
+             && Desktop::canUseSemiTransparentWindows()
+             && ((! hasTitleBar()) || SystemStats::getOperatingSystemType() < SystemStats::WinVista))
         {
             shadower = component.getLookAndFeel().createDropShadowerForComponent (&component);
 
@@ -1811,13 +1848,10 @@ private:
             {
                 const DWORD flags = inputInfo[i].dwFlags;
 
-                if ((flags & TOUCHEVENTF_PRIMARY) == 0  // primary events are handled by WM_LBUTTON etc
-                     && (flags & (TOUCHEVENTF_DOWN | TOUCHEVENTF_MOVE | TOUCHEVENTF_UP)) != 0)
-                {
-                    if (! handleTouchInput (inputInfo[i], (flags & TOUCHEVENTF_DOWN) != 0,
-                                                          (flags & TOUCHEVENTF_UP) != 0))
+                if ((flags & (TOUCHEVENTF_DOWN | TOUCHEVENTF_MOVE | TOUCHEVENTF_UP)) != 0)
+                    if (! handleTouchInput (inputInfo[i], (flags & TOUCHEVENTF_PRIMARY) != 0,
+                                            (flags & TOUCHEVENTF_DOWN) != 0, (flags & TOUCHEVENTF_UP) != 0))
                         return 0;  // abandon method if this window was deleted by the callback
-                }
             }
         }
 
@@ -1825,7 +1859,7 @@ private:
         return 0;
     }
 
-    bool handleTouchInput (const TOUCHINPUT& touch, const bool isDown, const bool isUp)
+    bool handleTouchInput (const TOUCHINPUT& touch, const bool isPrimary, const bool isDown, const bool isUp)
     {
         bool isCancel = false;
         const int touchIndex = currentTouches.getIndexOfTouch (touch.dwID);
@@ -1839,10 +1873,13 @@ private:
             currentModifiers = currentModifiers.withoutMouseButtons().withFlags (ModifierKeys::leftButtonModifier);
             modsToSend = currentModifiers;
 
-            // this forces a mouse-enter/up event, in case for some reason we didn't get a mouse-up before.
-            handleMouseEvent (touchIndex + 1, pos, modsToSend.withoutMouseButtons(), time);
-            if (! isValidPeer (this)) // (in case this component was deleted by the event)
-                return false;
+            if (! isPrimary)
+            {
+                // this forces a mouse-enter/up event, in case for some reason we didn't get a mouse-up before.
+                handleMouseEvent (touchIndex, pos, modsToSend.withoutMouseButtons(), time);
+                if (! isValidPeer (this)) // (in case this component was deleted by the event)
+                    return false;
+            }
         }
         else if (isUp)
         {
@@ -1852,6 +1889,10 @@ private:
             if (! currentTouches.areAnyTouchesActive())
                 isCancel = true;
         }
+        else
+        {
+            modsToSend = currentModifiers.withoutMouseButtons().withFlags (ModifierKeys::leftButtonModifier);
+        }
 
         if (isCancel)
         {
@@ -1859,13 +1900,16 @@ private:
             currentModifiers = currentModifiers.withoutMouseButtons();
         }
 
-        handleMouseEvent (touchIndex + 1, pos, modsToSend, time);
-        if (! isValidPeer (this)) // (in case this component was deleted by the event)
-            return false;
-
-        if (isUp || isCancel)
+        if (! isPrimary)
         {
-            handleMouseEvent (touchIndex + 1, Point<int> (-10, -10), currentModifiers, time);
+            handleMouseEvent (touchIndex, pos, modsToSend, time);
+            if (! isValidPeer (this)) // (in case this component was deleted by the event)
+                return false;
+        }
+
+        if ((isUp || isCancel) && ! isPrimary)
+        {
+            handleMouseEvent (touchIndex, Point<int> (-10, -10), currentModifiers, time);
             if (! isValidPeer (this))
                 return false;
         }
@@ -2083,22 +2127,27 @@ private:
                 && (styleFlags & (windowHasTitleBar | windowIsResizable)) == (windowHasTitleBar | windowIsResizable);
     }
 
+    Rectangle<int> getCurrentScaledBounds (float scale) const
+    {
+        return ScalingHelpers::unscaledScreenPosToScaled (scale, windowBorder.addedTo (ScalingHelpers::scaledScreenPosToUnscaled (scale, component.getBounds())));
+    }
+
     LRESULT handleSizeConstraining (RECT& r, const WPARAM wParam)
     {
         if (isConstrainedNativeWindow())
         {
             const float scale = getComponent().getDesktopScaleFactor();
-            Rectangle<int> pos (rectangleFromRECT (r) / scale);
-            const Rectangle<int> current (windowBorder.addedTo (component.getBounds()));
+            Rectangle<int> pos (ScalingHelpers::unscaledScreenPosToScaled (scale, rectangleFromRECT (r)));
+            const Rectangle<int> current (getCurrentScaledBounds (scale));
 
-            constrainer->checkBounds (pos, windowBorder.addedTo (component.getBounds()),
+            constrainer->checkBounds (pos, current,
                                       Desktop::getInstance().getDisplays().getTotalBounds (true),
                                       wParam == WMSZ_TOP    || wParam == WMSZ_TOPLEFT    || wParam == WMSZ_TOPRIGHT,
                                       wParam == WMSZ_LEFT   || wParam == WMSZ_TOPLEFT    || wParam == WMSZ_BOTTOMLEFT,
                                       wParam == WMSZ_BOTTOM || wParam == WMSZ_BOTTOMLEFT || wParam == WMSZ_BOTTOMRIGHT,
                                       wParam == WMSZ_RIGHT  || wParam == WMSZ_TOPRIGHT   || wParam == WMSZ_BOTTOMRIGHT);
 
-            pos *= scale;
+            pos = ScalingHelpers::scaledScreenPosToUnscaled (scale, pos);
             r.left   = pos.getX();
             r.top    = pos.getY();
             r.right  = pos.getRight();
@@ -2116,9 +2165,8 @@ private:
                  && ! Component::isMouseButtonDownAnywhere())
             {
                 const float scale = getComponent().getDesktopScaleFactor();
-                Rectangle<int> pos (wp.x, wp.y, wp.cx, wp.cy);
-                pos /= scale;
-                const Rectangle<int> current (windowBorder.addedTo (component.getBounds()));
+                Rectangle<int> pos (ScalingHelpers::unscaledScreenPosToScaled (scale, Rectangle<int> (wp.x, wp.y, wp.cx, wp.cy)));
+                const Rectangle<int> current (getCurrentScaledBounds (scale));
 
                 constrainer->checkBounds (pos, current,
                                           Desktop::getInstance().getDisplays().getTotalBounds (true),
@@ -2127,7 +2175,7 @@ private:
                                           pos.getY() == current.getY() && pos.getBottom() != current.getBottom(),
                                           pos.getX() == current.getX() && pos.getRight()  != current.getRight());
 
-                pos *= scale;
+                pos = ScalingHelpers::scaledScreenPosToUnscaled (scale, pos);
                 wp.x = pos.getX();
                 wp.y = pos.getY();
                 wp.cx = pos.getWidth();
@@ -2233,6 +2281,10 @@ private:
             setWindowPos (hwnd, display.userArea * display.scale,
                           SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER | SWP_NOSENDCHANGING);
         }
+    }
+
+    void handleDPIChange() // happens when a window moves to a screen with a different DPI.
+    {
     }
 
     //==============================================================================
@@ -2446,7 +2498,10 @@ private:
 
             case WM_SHOWWINDOW:
                 if (wParam != 0)
+                {
+                    component.setVisible (true);
                     handleBroughtToFront();
+                }
 
                 break;
 
@@ -2472,6 +2527,10 @@ private:
                 // intentional fall-through...
             case WM_SETTINGCHANGE:  // note the fall-through in the previous case!
                 doSettingChange();
+                break;
+
+            case 0x2e0: // WM_DPICHANGED
+                handleDPIChange();
                 break;
 
             case WM_INITMENU:
@@ -2937,14 +2996,12 @@ class WindowsMessageBox  : public AsyncUpdater
 {
 public:
     WindowsMessageBox (AlertWindow::AlertIconType iconType,
-                       const String& title_, const String& message_,
-                       Component* associatedComponent,
-                       UINT extraFlags,
-                       ModalComponentManager::Callback* callback_,
-                       const bool runAsync)
+                       const String& boxTitle, const String& m,
+                       Component* associatedComponent, UINT extraFlags,
+                       ModalComponentManager::Callback* cb, const bool runAsync)
         : flags (extraFlags | getMessageBoxFlags (iconType)),
           owner (getWindowForMessageBox (associatedComponent)),
-          title (title_), message (message_), callback (callback_)
+          title (boxTitle), message (m), callback (cb)
     {
         if (runAsync)
             triggerAsyncUpdate();
@@ -2970,7 +3027,7 @@ private:
     UINT flags;
     HWND owner;
     String title, message;
-    ModalComponentManager::Callback* callback;
+    ScopedPointer<ModalComponentManager::Callback> callback;
 
     static UINT getMessageBoxFlags (AlertWindow::AlertIconType iconType) noexcept
     {
@@ -3161,15 +3218,42 @@ String SystemClipboard::getTextFromClipboard()
 //==============================================================================
 void Desktop::setKioskComponent (Component* kioskModeComponent, bool enableOrDisable, bool /*allowMenusAndBars*/)
 {
+    if (TopLevelWindow* tlw = dynamic_cast<TopLevelWindow*> (kioskModeComponent))
+        tlw->setUsingNativeTitleBar (! enableOrDisable);
+
     if (enableOrDisable)
         kioskModeComponent->setBounds (getDisplays().getMainDisplay().totalArea);
 }
 
 //==============================================================================
-static BOOL CALLBACK enumMonitorsProc (HMONITOR, HDC, LPRECT r, LPARAM userInfo)
+struct MonitorInfo
 {
-    Array <Rectangle<int> >* const monitorCoords = (Array <Rectangle<int> >*) userInfo;
-    monitorCoords->add (rectangleFromRECT (*r));
+    MonitorInfo (Rectangle<int> rect, bool main, double d) noexcept
+        : isMain (main), bounds (rect), dpi (d) {}
+
+    Rectangle<int> bounds;
+    bool isMain;
+    double dpi;
+};
+
+static BOOL CALLBACK enumMonitorsProc (HMONITOR hm, HDC, LPRECT r, LPARAM userInfo)
+{
+    MONITORINFO info = { 0 };
+    info.cbSize = sizeof (info);
+    GetMonitorInfo (hm, &info);
+    const bool isMain = (info.dwFlags & 1 /* MONITORINFOF_PRIMARY */) != 0;
+    double dpi = 0;
+
+    if (getDPIForMonitor != nullptr)
+    {
+        UINT dpiX = 0, dpiY = 0;
+
+        if (SUCCEEDED (getDPIForMonitor (hm, MDT_Default, &dpiX, &dpiY)))
+            dpi = (dpiX + dpiY) / 2.0;
+    }
+
+    ((Array<MonitorInfo>*) userInfo)->add (MonitorInfo (rectangleFromRECT (*r), isMain, dpi));
+
     return TRUE;
 }
 
@@ -3177,31 +3261,40 @@ void Desktop::Displays::findDisplays (float masterScale)
 {
     setDPIAwareness();
 
-    Array <Rectangle<int> > monitors;
+    Array<MonitorInfo> monitors;
     EnumDisplayMonitors (0, 0, &enumMonitorsProc, (LPARAM) &monitors);
+
+    const double globalDPI = getGlobalDPI();
+
+    if (monitors.size() == 0)
+        monitors.add (MonitorInfo (rectangleFromRECT (getWindowRect (GetDesktopWindow())), true, globalDPI));
 
     // make sure the first in the list is the main monitor
     for (int i = 1; i < monitors.size(); ++i)
-        if (monitors.getReference(i).getX() == 0 && monitors.getReference(i).getY() == 0)
+        if (monitors.getReference(i).isMain)
             monitors.swap (i, 0);
-
-    if (monitors.size() == 0)
-        monitors.add (rectangleFromRECT (getWindowRect (GetDesktopWindow())));
 
     RECT workArea;
     SystemParametersInfo (SPI_GETWORKAREA, 0, &workArea, 0);
 
-    const double dpi = getDPI(); // (this has only one value for all monitors)
-
     for (int i = 0; i < monitors.size(); ++i)
     {
         Display d;
-        d.userArea = d.totalArea = monitors.getReference(i) / masterScale;
-        d.isMain = (i == 0);
-        d.scale = masterScale;
-        d.dpi = dpi;
+        d.userArea  = d.totalArea = monitors.getReference(i).bounds / masterScale;
+        d.isMain    = monitors.getReference(i).isMain;
+        d.dpi       = monitors.getReference(i).dpi;
 
-        if (i == 0)
+        if (d.dpi == 0)
+        {
+            d.scale = masterScale;
+            d.dpi = globalDPI;
+        }
+        else
+        {
+            d.scale = d.dpi / 96.0;
+        }
+
+        if (d.isMain)
             d.userArea = d.userArea.getIntersection (rectangleFromRECT (workArea) / masterScale);
 
         displays.add (d);

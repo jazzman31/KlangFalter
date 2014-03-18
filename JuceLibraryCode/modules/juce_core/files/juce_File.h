@@ -203,7 +203,7 @@ public:
 
         @see getFileExtension, withFileExtension, getFileNameWithoutExtension
     */
-    bool hasFileExtension (const String& extensionToTest) const;
+    bool hasFileExtension (StringRef extensionToTest) const;
 
     /** Returns a version of this file with a different file extension.
 
@@ -215,7 +215,7 @@ public:
 
         @see getFileName, getFileExtension, hasFileExtension, getFileNameWithoutExtension
     */
-    File withFileExtension (const String& newExtension) const;
+    File withFileExtension (StringRef newExtension) const;
 
     /** Returns the last part of the filename, without its file extension.
 
@@ -255,7 +255,7 @@ public:
 
         @see getSiblingFile, getParentDirectory, getRelativePathFrom, isAChildOf
     */
-    File getChildFile (String relativeOrAbsolutePath) const;
+    File getChildFile (StringRef relativeOrAbsolutePath) const;
 
     /** Returns a file which is in the same directory as this one.
 
@@ -263,7 +263,7 @@ public:
 
         @see getChildFile, getParentDirectory
     */
-    File getSiblingFile (const String& siblingFileName) const;
+    File getSiblingFile (StringRef siblingFileName) const;
 
     //==============================================================================
     /** Returns the directory that contains this file or directory.
@@ -353,8 +353,11 @@ public:
     */
     bool isHidden() const;
 
-    /** If this file is a link, this returns the file that it points to.
-        If this file isn't actually link, it'll just return itself.
+    /** Returns true if this file is a link or alias that can be followed using getLinkedTarget(). */
+    bool isLink() const;
+
+    /** If this file is a link or alias, this returns the file that it points to.
+        If the file isn't actually link, it'll just return itself.
     */
     File getLinkedTarget() const;
 
@@ -738,7 +741,7 @@ public:
 
         @see revealToUser
     */
-    bool startAsProcess (const String& parameters = String::empty) const;
+    bool startAsProcess (const String& parameters = String()) const;
 
     /** Opens Finder, Explorer, or whatever the OS uses, to show the user this file's location.
         @see startAsProcess
@@ -852,7 +855,7 @@ public:
         This will try to return the name of a non-existent temp file.
         To get the temp folder, you can use getSpecialLocation (File::tempDirectory).
     */
-    static File createTempFile (const String& fileNameEnding);
+    static File createTempFile (StringRef fileNameEnding);
 
 
     //==============================================================================
@@ -908,7 +911,7 @@ public:
     static bool areFileNamesCaseSensitive();
 
     /** Returns true if the string seems to be a fully-specified absolute path. */
-    static bool isAbsolutePath (const String& path);
+    static bool isAbsolutePath (StringRef path);
 
     /** Creates a file that simply contains this string, without doing the sanity-checking
         that the normal constructors do.

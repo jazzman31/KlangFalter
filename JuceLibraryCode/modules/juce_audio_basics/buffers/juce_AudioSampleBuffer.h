@@ -107,19 +107,16 @@ public:
 
     //==============================================================================
     /** Returns the number of channels of audio data that this buffer contains.
-
         @see getSampleData
     */
     int getNumChannels() const noexcept     { return numChannels; }
 
     /** Returns the number of samples allocated in each of the buffer's channels.
-
         @see getSampleData
     */
     int getNumSamples() const noexcept      { return size; }
 
     /** Returns a pointer one of the buffer's channels.
-
         For speed, this doesn't check whether the channel number is out of range,
         so be careful when using it!
     */
@@ -395,36 +392,35 @@ public:
                            float endGain) noexcept;
 
 
-    /** Finds the highest and lowest sample values in a given range.
+    /** Returns a Range indicating the lowest and highest sample values in a given section.
 
         @param channel      the channel to read from
         @param startSample  the start sample within the channel
         @param numSamples   the number of samples to check
-        @param minVal       on return, the lowest value that was found
-        @param maxVal       on return, the highest value that was found
     */
-    void findMinMax (int channel,
-                     int startSample,
-                     int numSamples,
-                     float& minVal,
-                     float& maxVal) const noexcept;
+    Range<float> findMinMax (int channel,
+                             int startSample,
+                             int numSamples) const noexcept;
 
-    /** Finds the highest absolute sample value within a region of a channel.
-    */
+    /** Finds the highest absolute sample value within a region of a channel. */
     float getMagnitude (int channel,
                         int startSample,
                         int numSamples) const noexcept;
 
-    /** Finds the highest absolute sample value within a region on all channels.
-    */
+    /** Finds the highest absolute sample value within a region on all channels. */
     float getMagnitude (int startSample,
                         int numSamples) const noexcept;
 
-    /** Returns the root mean squared level for a region of a channel.
-    */
+    /** Returns the root mean squared level for a region of a channel. */
     float getRMSLevel (int channel,
                        int startSample,
                        int numSamples) const noexcept;
+
+    /** Reverses a part of a channel. */
+    void reverse (int channel, int startSample, int numSamples) const noexcept;
+
+    /** Reverses a part of the buffer. */
+    void reverse (int startSample, int numSamples) const noexcept;
 
 private:
     //==============================================================================

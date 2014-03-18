@@ -174,12 +174,16 @@ bool OutputStream::writeDoubleBigEndian (double value)
 
 bool OutputStream::writeString (const String& text)
 {
+   #if (JUCE_STRING_UTF_TYPE == 8)
+    return write (text.toRawUTF8(), text.getNumBytesAsUTF8() + 1);
+   #else
     // (This avoids using toUTF8() to prevent the memory bloat that it would leave behind
     // if lots of large, persistent strings were to be written to streams).
     const size_t numBytes = text.getNumBytesAsUTF8() + 1;
     HeapBlock<char> temp (numBytes);
     text.copyToUTF8 (temp, numBytes);
     return write (temp, numBytes);
+   #endif
 }
 
 bool OutputStream::writeText (const String& text, const bool asUTF16,
@@ -279,14 +283,25 @@ void OutputStream::setNewLineString (const String& newLineString_)
 }
 
 //==============================================================================
+template <typename IntegerType>
+static void writeIntToStream (OutputStream& stream, IntegerType number)
+{
+    char buffer [NumberToStringConverters::charsNeededForInt];
+    char* end = buffer + numElementsInArray (buffer);
+    const char* start = NumberToStringConverters::numberToString (end, number);
+    stream.write (start, (size_t) (end - start - 1));
+}
+
 JUCE_API OutputStream& JUCE_CALLTYPE operator<< (OutputStream& stream, const int number)
 {
-    return stream << String (number);
+    writeIntToStream (stream, number);
+    return stream;
 }
 
 JUCE_API OutputStream& JUCE_CALLTYPE operator<< (OutputStream& stream, const int64 number)
 {
-    return stream << String (number);
+    writeIntToStream (stream, number);
+    return stream;
 }
 
 JUCE_API OutputStream& JUCE_CALLTYPE operator<< (OutputStream& stream, const double number)

@@ -287,17 +287,14 @@ public:
 
     //==============================================================================
     /** Sets a message to display when there is no item currently selected.
-
         @see getTextWhenNothingSelected
     */
     void setTextWhenNothingSelected (const String& newMessage);
 
     /** Returns the text that is shown when no item is selected.
-
         @see setTextWhenNothingSelected
     */
     String getTextWhenNothingSelected() const;
-
 
     /** Sets the message to show when there are no items in the list, and the user clicks
         on the drop-down box.
@@ -334,6 +331,25 @@ public:
         outlineColourId     = 0x1000c00,    /**< The colour for an outline around the box. */
         buttonColourId      = 0x1000d00,    /**< The base colour for the button (a LookAndFeel class will probably use variations on this). */
         arrowColourId       = 0x1000e00,    /**< The colour for the arrow shape that pops up the menu */
+    };
+
+    //==============================================================================
+    /** This abstract base class is implemented by LookAndFeel classes to provide
+        ComboBox functionality.
+    */
+    struct JUCE_API  LookAndFeelMethods
+    {
+        virtual ~LookAndFeelMethods() {}
+
+        virtual void drawComboBox (Graphics&, int width, int height, bool isButtonDown,
+                                   int buttonX, int buttonY, int buttonW, int buttonH,
+                                   ComboBox&) = 0;
+
+        virtual Font getComboBoxFont (ComboBox&) = 0;
+
+        virtual Label* createComboBoxTextBox (ComboBox&) = 0;
+
+        virtual void positionComboBoxText (ComboBox&, Label& labelToPosition) = 0;
     };
 
     //==============================================================================
@@ -382,7 +398,7 @@ private:
     //==============================================================================
     struct ItemInfo
     {
-        ItemInfo (const String& name, int itemId, bool isEnabled, bool isHeading);
+        ItemInfo (const String&, int itemId, bool isEnabled, bool isHeading);
         bool isSeparator() const noexcept;
         bool isRealItem() const noexcept;
 
@@ -399,8 +415,8 @@ private:
     ScopedPointer<Label> label;
     String textWhenNothingSelected, noChoicesMessage;
 
-    ItemInfo* getItemForId (int itemId) const noexcept;
-    ItemInfo* getItemForIndex (int index) const noexcept;
+    ItemInfo* getItemForId (int) const noexcept;
+    ItemInfo* getItemForIndex (int) const noexcept;
     bool selectIfEnabled (int index);
     bool nudgeSelectedItem (int delta);
     void sendChange (NotificationType);

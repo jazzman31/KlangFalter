@@ -210,7 +210,7 @@ XmlElement* XmlDocument::parseDocumentElement (String::CharPointerType textToPar
     }
     else
     {
-        lastError = String::empty;
+        lastError.clear();
 
         ScopedPointer<XmlElement> result (readNextElement (! onlyReadOuterDocumentElement));
 
@@ -312,7 +312,8 @@ void XmlDocument::skipNextWhiteSpace()
                 input += closeComment + 3;
                 continue;
             }
-            else if (input[1] == '?')
+
+            if (input[1] == '?')
             {
                 input += 2;
                 const int closeBracket = input.indexOf (CharPointer_ASCII ("?>"));
@@ -370,8 +371,8 @@ void XmlDocument::readQuotedString (String& result)
                 }
                 else if (character == 0)
                 {
-                    outOfData = true;
                     setLastError ("unmatched quotes", false);
+                    outOfData = true;
                     break;
                 }
 
@@ -431,7 +432,7 @@ XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
                 ++input;
 
                 if (alsoParseSubElements)
-                    readChildElements (node);
+                    readChildElements (*node);
 
                 break;
             }
@@ -486,9 +487,9 @@ XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
     return node;
 }
 
-void XmlDocument::readChildElements (XmlElement* parent)
+void XmlDocument::readChildElements (XmlElement& parent)
 {
-    LinkedListPointer<XmlElement>::Appender childAppender (parent->firstChildElement);
+    LinkedListPointer<XmlElement>::Appender childAppender (parent.firstChildElement);
 
     for (;;)
     {
@@ -515,7 +516,8 @@ void XmlDocument::readChildElements (XmlElement* parent)
 
                 break;
             }
-            else if (c1 == '!' && CharacterFunctions::compareUpTo (input + 2, CharPointer_ASCII ("[CDATA["), 7) == 0)
+
+            if (c1 == '!' && CharacterFunctions::compareUpTo (input + 2, CharPointer_ASCII ("[CDATA["), 7) == 0)
             {
                 input += 9;
                 const String::CharPointerType inputStart (input);
@@ -561,7 +563,25 @@ void XmlDocument::readChildElements (XmlElement* parent)
                 const juce_wchar c = *input;
 
                 if (c == '<')
+                {
+                    if (input[1] == '!' && input[2] == '-' && input[3] == '-')
+                    {
+                        input += 4;
+                        const int closeComment = input.indexOf (CharPointer_ASCII ("-->"));
+
+                        if (closeComment < 0)
+                        {
+                            setLastError ("unterminated comment", false);
+                            outOfData = true;
+                            return;
+                        }
+
+                        input += closeComment + 3;
+                        continue;
+                    }
+
                     break;
+                }
 
                 if (c == 0)
                 {

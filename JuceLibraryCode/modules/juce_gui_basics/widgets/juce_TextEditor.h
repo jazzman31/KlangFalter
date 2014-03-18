@@ -581,6 +581,20 @@ public:
                                const String& allowedCharacters = String::empty);
 
     //==============================================================================
+    /** This abstract base class is implemented by LookAndFeel classes to provide
+        TextEditor drawing functionality.
+    */
+    struct JUCE_API  LookAndFeelMethods
+    {
+        virtual ~LookAndFeelMethods() {}
+
+        virtual void fillTextEditorBackground (Graphics&, int width, int height, TextEditor&) = 0;
+        virtual void drawTextEditorOutline (Graphics&, int width, int height, TextEditor&) = 0;
+
+        virtual CaretComponent* createCaretComponent (Component* keyFocusOwner) = 0;
+    };
+
+    //==============================================================================
     /** @internal */
     void paint (Graphics&) override;
     /** @internal */
@@ -643,7 +657,7 @@ private:
     friend class InsertAction;
     friend class RemoveAction;
 
-    ScopedPointer <Viewport> viewport;
+    ScopedPointer<Viewport> viewport;
     TextHolderComponent* textHolder;
     BorderSize<int> borderSize;
 
@@ -669,7 +683,7 @@ private:
     Font currentFont;
     mutable int totalNumChars;
     int caretPosition;
-    Array <UniformTextSection*> sections;
+    OwnedArray<UniformTextSection> sections;
     String textToShowWhenEmpty;
     Colour colourForTextWhenEmpty;
     juce_wchar passwordCharacter;
@@ -693,7 +707,7 @@ private:
     void splitSection (int sectionIndex, int charToSplitAt);
     void clearInternal (UndoManager*);
     void insert (const String&, int insertIndex, const Font&, const Colour, UndoManager*, int newCaretPos);
-    void reinsert (int insertIndex, const Array <UniformTextSection*>&);
+    void reinsert (int insertIndex, const OwnedArray<UniformTextSection>&);
     void remove (Range<int> range, UndoManager*, int caretPositionToMoveTo);
     void getCharPosition (int index, float& x, float& y, float& lineHeight) const;
     void updateCaretPosition();

@@ -54,7 +54,7 @@ public:
     {
         setTitleBarButtonsRequired (DocumentWindow::minimiseButton | DocumentWindow::closeButton, false);
 
-        Component::addAndMakeVisible (&optionsButton);
+        Component::addAndMakeVisible (optionsButton);
         optionsButton.addListener (this);
         optionsButton.setTriggeredOnMouseDown (true);
 
@@ -105,7 +105,7 @@ public:
             const int y = settings->getIntValue ("windowY", -100);
 
             if (x != -100 && y != -100)
-                setBoundsConstrained (Rectangle<int> (x, y, getWidth(), getHeight()));
+                setBoundsConstrained (juce::Rectangle<int> (x, y, getWidth(), getHeight()));
             else
                 centreWithSize (getWidth(), getHeight());
         }

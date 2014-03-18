@@ -26,9 +26,21 @@
 
 using namespace juce;
 
-#if JUCE_MAC && ! DOXYGEN
- #define Point     juce::Point
- #define Component juce::Component
-#endif
+namespace juce
+{
+    #if JUCE_MAC && ! DOXYGEN
+     #define Point     juce::Point
+     #define Component juce::Component
+
+     void repostCurrentNSEvent();
+    #endif
+
+    //==============================================================================
+    inline const PluginHostType& getHostType()
+    {
+        static PluginHostType hostType;
+        return hostType;
+    }
+}
 
 extern AudioProcessor* JUCE_CALLTYPE createPluginFilterOfType (AudioProcessor::WrapperType);

@@ -26,7 +26,7 @@ namespace ColourHelpers
 {
     static uint8 floatToUInt8 (const float n) noexcept
     {
-        return n <= 0.0f ? 0 : (n >= 1.0f ? 255 : (uint8) (n * 255.0f));
+        return n <= 0.0f ? 0 : (n >= 1.0f ? 255 : static_cast<uint8> (n * 255.996f));
     }
 
     // This is an adjusted brightness value, based on the way the human
@@ -437,9 +437,9 @@ String Colour::toString() const
     return String::toHexString ((int) argb.getARGB());
 }
 
-Colour Colour::fromString (const String& encodedColourString)
+Colour Colour::fromString (StringRef encodedColourString)
 {
-    return Colour ((uint32) encodedColourString.getHexValue32());
+    return Colour ((uint32) CharacterFunctions::HexParser<int>::parse (encodedColourString.text));
 }
 
 String Colour::toDisplayString (const bool includeAlphaValue) const

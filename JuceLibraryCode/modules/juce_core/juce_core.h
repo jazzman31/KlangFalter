@@ -64,7 +64,7 @@
 //=============================================================================
 /** Config: JUCE_LOG_ASSERTIONS
 
-    If this flag is enabled, the the jassert and jassertfalse macros will always use Logger::writeToLog()
+    If this flag is enabled, the jassert and jassertfalse macros will always use Logger::writeToLog()
     to write a message when an assertion happens.
 
     Enabling it will also leave this turned on in release builds. When it's disabled,
@@ -145,6 +145,7 @@
 namespace juce
 {
 
+class StringRef;
 class MemoryBlock;
 class File;
 class InputStream;
@@ -179,6 +180,7 @@ extern JUCE_API void JUCE_CALLTYPE logAssertion (const char* file, int line) noe
 #endif
 
 #include "text/juce_String.h"
+#include "text/juce_StringRef.h"
 #include "logging/juce_Logger.h"
 #include "memory/juce_LeakedObjectDetector.h"
 #include "memory/juce_ContainerDeletePolicy.h"
@@ -230,9 +232,12 @@ extern JUCE_API void JUCE_CALLTYPE logAssertion (const char* file, int line) noe
 #include "files/juce_FileSearchPath.h"
 #include "files/juce_MemoryMappedFile.h"
 #include "files/juce_TemporaryFile.h"
+#include "files/juce_FileFilter.h"
+#include "files/juce_WildcardFileFilter.h"
 #include "streams/juce_FileInputSource.h"
 #include "logging/juce_FileLogger.h"
-#include "json/juce_JSON.h"
+#include "javascript/juce_JSON.h"
+#include "javascript/juce_Javascript.h"
 #include "maths/juce_BigInteger.h"
 #include "maths/juce_Expression.h"
 #include "maths/juce_Random.h"

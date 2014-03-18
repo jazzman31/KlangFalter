@@ -42,6 +42,23 @@ namespace juce {
 #endif
 
 //==============================================================================
+static CGFloat getMainScreenHeight() noexcept
+{
+    return [[[NSScreen screens] objectAtIndex: 0] frame].size.height;
+}
+
+static void flipScreenRect (NSRect& r) noexcept
+{
+    r.origin.y = getMainScreenHeight() - (r.origin.y + r.size.height);
+}
+
+static NSRect flippedScreenRect (NSRect r) noexcept
+{
+    flipScreenRect (r);
+    return r;
+}
+
+//==============================================================================
 class NSViewComponentPeer  : public ComponentPeer
 {
 public:
@@ -107,7 +124,7 @@ public:
         {
             r.origin.x = (CGFloat) component.getX();
             r.origin.y = (CGFloat) component.getY();
-            r.origin.y = [[[NSScreen screens] objectAtIndex: 0] frame].size.height - (r.origin.y + r.size.height);
+            flipScreenRect (r);
 
             window = [createWindowInstance() initWithContentRect: r
                                                        styleMask: getNSWindowStyleMask (windowStyleFlags)
@@ -185,7 +202,9 @@ public:
         {
             if (shouldBeVisible)
             {
+                ++insideToFrontCall;
                 [window orderFront: nil];
+                --insideToFrontCall;
                 handleBroughtToFront();
             }
             else
@@ -241,9 +260,7 @@ public:
         }
         else
         {
-            r.origin.y = [[[NSScreen screens] objectAtIndex: 0] frame].size.height - (r.origin.y + r.size.height);
-
-            [window setFrame: [window frameRectForContentRect: r]
+            [window setFrame: [window frameRectForContentRect: flippedScreenRect (r)]
                      display: true];
         }
     }
@@ -263,7 +280,7 @@ public:
             r.origin = [viewWindow convertBaseToScreen: r.origin];
            #endif
 
-            r.origin.y = [[[NSScreen screens] objectAtIndex: 0] frame].size.height - r.origin.y - r.size.height;
+            flipScreenRect (r);
         }
         else
         {
@@ -361,6 +378,16 @@ public:
     bool isFullScreen() const override
     {
         return fullScreen;
+    }
+
+    bool isKioskMode() const override
+    {
+       #if defined (MAC_OS_X_VERSION_10_7) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
+        if (hasNativeTitleBar() && ([window styleMask] & NSFullScreenWindowMask) != 0)
+            return true;
+       #endif
+
+        return ComponentPeer::isKioskMode();
     }
 
     bool contains (Point<int> localPos, bool trueIfInAChildWindow) const override
@@ -583,8 +610,8 @@ public:
                 if ([ev hasPreciseScrollingDeltas])
                 {
                     const float scale = 0.5f / 256.0f;
-                    wheel.deltaX = [ev scrollingDeltaX] * scale;
-                    wheel.deltaY = [ev scrollingDeltaY] * scale;
+                    wheel.deltaX = scale * (float) [ev scrollingDeltaX];
+                    wheel.deltaY = scale * (float) [ev scrollingDeltaY];
                     wheel.isSmooth = true;
                 }
             }
@@ -603,8 +630,8 @@ public:
         if (wheel.deltaX == 0 && wheel.deltaY == 0)
         {
             const float scale = 10.0f / 256.0f;
-            wheel.deltaX = [ev deltaX] * scale;
-            wheel.deltaY = [ev deltaY] * scale;
+            wheel.deltaX = scale * (float) [ev deltaX];
+            wheel.deltaY = scale * (float) [ev deltaY];
         }
 
         handleMouseWheel (0, getMousePos (ev, view), getMouseTime (ev), wheel);
@@ -613,7 +640,7 @@ public:
     void redirectMagnify (NSEvent* ev)
     {
        #if defined (MAC_OS_X_VERSION_10_6) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6
-        const float invScale = 1.0f - [ev magnification];
+        const float invScale = 1.0f - (float) [ev magnification];
 
         if (invScale != 0.0f)
             handleMagnifyGesture (0, getMousePos (ev, view), getMouseTime (ev), 1.0f / invScale);
@@ -751,7 +778,7 @@ public:
        #if defined (MAC_OS_X_VERSION_10_7) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7)
         NSScreen* screen = [[view window] screen];
         if ([screen respondsToSelector: @selector (backingScaleFactor)])
-            displayScale = screen.backingScaleFactor;
+            displayScale = (float) screen.backingScaleFactor;
        #endif
 
        #if USE_COREGRAPHICS_RENDERING
@@ -875,13 +902,9 @@ public:
             #endif
             )
         {
-            NSRect current = [window frame];
-            current.origin.y = [[[NSScreen screens] objectAtIndex: 0] frame].size.height - current.origin.y - current.size.height;
+            Rectangle<int> pos      (convertToRectInt (flippedScreenRect (r)));
+            Rectangle<int> original (convertToRectInt (flippedScreenRect ([window frame])));
 
-            r.origin.y = [[[NSScreen screens] objectAtIndex: 0] frame].size.height - r.origin.y - r.size.height;
-
-            Rectangle<int> pos (convertToRectInt (r));
-            Rectangle<int> original (convertToRectInt (current));
             const Rectangle<int> screenBounds (Desktop::getInstance().getDisplays().getTotalBounds (true));
 
            #if defined (MAC_OS_X_VERSION_10_6) && MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_6
@@ -898,15 +921,12 @@ public:
             {
                 constrainer->checkBounds (pos, original, screenBounds,
                                           pos.getY() != original.getY() && pos.getBottom() == original.getBottom(),
-                                          pos.getX() != original.getX() && pos.getRight() == original.getRight(),
+                                          pos.getX() != original.getX() && pos.getRight()  == original.getRight(),
                                           pos.getY() == original.getY() && pos.getBottom() != original.getBottom(),
-                                          pos.getX() == original.getX() && pos.getRight() != original.getRight());
+                                          pos.getX() == original.getX() && pos.getRight()  != original.getRight());
             }
 
-            r.origin.x = pos.getX();
-            r.origin.y = [[[NSScreen screens] objectAtIndex: 0] frame].size.height - r.size.height - pos.getY();
-            r.size.width = pos.getWidth();
-            r.size.height = pos.getHeight();
+            r = flippedScreenRect (makeNSRect (pos));
         }
 
         return r;
@@ -1444,7 +1464,7 @@ private:
             if (target != nullptr)
                 [(NSView*) self interpretKeyEvents: [NSArray arrayWithObject: ev]];
             else
-                owner->stringBeingComposed = String::empty;
+                owner->stringBeingComposed.clear();
 
             if ((! owner->textWasInserted) && (owner == nullptr || ! owner->redirectKeyDown (ev)))
             {
@@ -1482,7 +1502,7 @@ private:
                 }
             }
 
-            owner->stringBeingComposed = String::empty;
+            owner->stringBeingComposed.clear();
         }
     }
 
@@ -1517,7 +1537,7 @@ private:
                     owner->textWasInserted = true;
                 }
 
-                owner->stringBeingComposed = String::empty;
+                owner->stringBeingComposed.clear();
             }
         }
     }
@@ -1578,17 +1598,8 @@ private:
     static NSRect firstRectForCharacterRange (id self, SEL, NSRange)
     {
         if (NSViewComponentPeer* const owner = getOwner (self))
-        {
             if (Component* const comp = dynamic_cast <Component*> (owner->findCurrentTextInputTarget()))
-            {
-                const Rectangle<int> bounds (comp->getScreenBounds());
-
-                return NSMakeRect (bounds.getX(),
-                                   [[[NSScreen screens] objectAtIndex: 0] frame].size.height - bounds.getY(),
-                                   bounds.getWidth(),
-                                   bounds.getHeight());
-            }
-        }
+                return flippedScreenRect (makeNSRect (comp->getScreenBounds()));
 
         return NSZeroRect;
     }
@@ -1687,7 +1698,7 @@ struct JuceNSWindowClass   : public ObjCClass <NSWindow>
         addMethod (@selector (canBecomeKeyWindow),            canBecomeKeyWindow,    "c@:");
         addMethod (@selector (becomeKeyWindow),               becomeKeyWindow,       "v@:");
         addMethod (@selector (windowShouldClose:),            windowShouldClose,     "c@:@");
-        addMethod (@selector (constrainFrameRect:toScreen:),  constrainFrameRect,    @encode (NSRect), "@:",  @encode (NSRect*), "@");
+        addMethod (@selector (constrainFrameRect:toScreen:),  constrainFrameRect,    @encode (NSRect), "@:",  @encode (NSRect), "@");
         addMethod (@selector (windowWillResize:toSize:),      windowWillResize,      @encode (NSSize), "@:@", @encode (NSSize));
         addMethod (@selector (zoom:),                         zoom,                  "v@:@");
         addMethod (@selector (windowWillMove:),               windowWillMove,        "v@:@");

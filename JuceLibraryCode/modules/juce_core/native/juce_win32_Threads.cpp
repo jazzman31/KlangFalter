@@ -28,6 +28,13 @@
 
 HWND juce_messageWindowHandle = 0;  // (this is used by other parts of the codebase)
 
+void* getUser32Function (const char* functionName)
+{
+    HMODULE module = GetModuleHandleA ("user32.dll");
+    jassert (module != 0);
+    return (void*) GetProcAddress (module, functionName);
+}
+
 //==============================================================================
 #if ! JUCE_USE_INTRINSICS
 // In newer compilers, the inline versions of these are used (in juce_Atomic.h), but in
@@ -55,59 +62,33 @@ __int64 juce_InterlockedCompareExchange64 (volatile __int64* value, __int64 newV
 CriticalSection::CriticalSection() noexcept
 {
     // (just to check the MS haven't changed this structure and broken things...)
-  #if JUCE_VC7_OR_EARLIER
+   #if JUCE_VC7_OR_EARLIER
     static_jassert (sizeof (CRITICAL_SECTION) <= 24);
-  #else
-    static_jassert (sizeof (CRITICAL_SECTION) <= sizeof (internal));
-  #endif
+   #else
+    static_jassert (sizeof (CRITICAL_SECTION) <= sizeof (lock));
+   #endif
 
-    InitializeCriticalSection ((CRITICAL_SECTION*) internal);
+    InitializeCriticalSection ((CRITICAL_SECTION*) lock);
 }
 
-CriticalSection::~CriticalSection() noexcept
-{
-    DeleteCriticalSection ((CRITICAL_SECTION*) internal);
-}
+CriticalSection::~CriticalSection() noexcept        { DeleteCriticalSection ((CRITICAL_SECTION*) lock); }
+void CriticalSection::enter() const noexcept        { EnterCriticalSection ((CRITICAL_SECTION*) lock); }
+bool CriticalSection::tryEnter() const noexcept     { return TryEnterCriticalSection ((CRITICAL_SECTION*) lock) != FALSE; }
+void CriticalSection::exit() const noexcept         { LeaveCriticalSection ((CRITICAL_SECTION*) lock); }
 
-void CriticalSection::enter() const noexcept
-{
-    EnterCriticalSection ((CRITICAL_SECTION*) internal);
-}
-
-bool CriticalSection::tryEnter() const noexcept
-{
-    return TryEnterCriticalSection ((CRITICAL_SECTION*) internal) != FALSE;
-}
-
-void CriticalSection::exit() const noexcept
-{
-    LeaveCriticalSection ((CRITICAL_SECTION*) internal);
-}
 
 //==============================================================================
 WaitableEvent::WaitableEvent (const bool manualReset) noexcept
-    : internal (CreateEvent (0, manualReset ? TRUE : FALSE, FALSE, 0))
-{
-}
+    : handle (CreateEvent (0, manualReset ? TRUE : FALSE, FALSE, 0)) {}
 
-WaitableEvent::~WaitableEvent() noexcept
-{
-    CloseHandle (internal);
-}
+WaitableEvent::~WaitableEvent() noexcept        { CloseHandle (handle); }
 
-bool WaitableEvent::wait (const int timeOutMillisecs) const noexcept
-{
-    return WaitForSingleObject (internal, (DWORD) timeOutMillisecs) == WAIT_OBJECT_0;
-}
+void WaitableEvent::signal() const noexcept     { SetEvent (handle); }
+void WaitableEvent::reset() const noexcept      { ResetEvent (handle); }
 
-void WaitableEvent::signal() const noexcept
+bool WaitableEvent::wait (const int timeOutMs) const noexcept
 {
-    SetEvent (internal);
-}
-
-void WaitableEvent::reset() const noexcept
-{
-    ResetEvent (internal);
+    return WaitForSingleObject (handle, (DWORD) timeOutMs) == WAIT_OBJECT_0;
 }
 
 //==============================================================================
@@ -229,17 +210,15 @@ static SleepEvent sleepEvent;
 
 void JUCE_CALLTYPE Thread::sleep (const int millisecs)
 {
+    jassert (millisecs >= 0);
+
     if (millisecs >= 10 || sleepEvent.handle == 0)
-    {
         Sleep ((DWORD) millisecs);
-    }
     else
-    {
         // unlike Sleep() this is guaranteed to return to the current thread after
         // the time expires, so we'll use this for short waits, which are more likely
         // to need to be accurate
         WaitForSingleObject (sleepEvent.handle, (DWORD) millisecs);
-    }
 }
 
 void Thread::yield()
@@ -250,7 +229,7 @@ void Thread::yield()
 //==============================================================================
 static int lastProcessPriority = -1;
 
-// called by WindowDriver because Windows does weird things to process priority
+// called when the app gains focus because Windows does weird things to process priority
 // when you swap apps, and this forces an update when the app is brought to the front.
 void juce_repeatLastProcessPriority()
 {
@@ -465,7 +444,7 @@ void InterProcessLock::exit()
 class ChildProcess::ActiveProcess
 {
 public:
-    ActiveProcess (const String& command)
+    ActiveProcess (const String& command, int streamFlags)
         : ok (false), readPipe (0), writePipe (0)
     {
         SECURITY_ATTRIBUTES securityAtts = { 0 };
@@ -477,8 +456,9 @@ public:
         {
             STARTUPINFOW startupInfo = { 0 };
             startupInfo.cb = sizeof (startupInfo);
-            startupInfo.hStdError  = writePipe;
-            startupInfo.hStdOutput = writePipe;
+
+            startupInfo.hStdOutput = (streamFlags | wantStdOut) != 0 ? writePipe : 0;
+            startupInfo.hStdError  = (streamFlags | wantStdErr) != 0 ? writePipe : 0;
             startupInfo.dwFlags = STARTF_USESTDHANDLES;
 
             ok = CreateProcess (nullptr, const_cast <LPWSTR> (command.toWideCharPointer()),
@@ -502,12 +482,12 @@ public:
             CloseHandle (writePipe);
     }
 
-    bool isRunning() const
+    bool isRunning() const noexcept
     {
         return WaitForSingleObject (processInfo.hProcess, 0) != WAIT_OBJECT_0;
     }
 
-    int read (void* dest, int numNeeded) const
+    int read (void* dest, int numNeeded) const noexcept
     {
         int total = 0;
 
@@ -542,9 +522,16 @@ public:
         return total;
     }
 
-    bool killProcess() const
+    bool killProcess() const noexcept
     {
         return TerminateProcess (processInfo.hProcess, 0) != FALSE;
+    }
+
+    uint32 getExitCode() const noexcept
+    {
+        DWORD exitCode = 0;
+        GetExitCodeProcess (processInfo.hProcess, &exitCode);
+        return (uint32) exitCode;
     }
 
     bool ok;
@@ -556,9 +543,9 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ActiveProcess)
 };
 
-bool ChildProcess::start (const String& command)
+bool ChildProcess::start (const String& command, int streamFlags)
 {
-    activeProcess = new ActiveProcess (command);
+    activeProcess = new ActiveProcess (command, streamFlags);
 
     if (! activeProcess->ok)
         activeProcess = nullptr;
@@ -566,24 +553,9 @@ bool ChildProcess::start (const String& command)
     return activeProcess != nullptr;
 }
 
-bool ChildProcess::start (const StringArray& args)
+bool ChildProcess::start (const StringArray& args, int streamFlags)
 {
-    return start (args.joinIntoString (" "));
-}
-
-bool ChildProcess::isRunning() const
-{
-    return activeProcess != nullptr && activeProcess->isRunning();
-}
-
-int ChildProcess::readProcessOutput (void* dest, int numBytes)
-{
-    return activeProcess != nullptr ? activeProcess->read (dest, numBytes) : 0;
-}
-
-bool ChildProcess::kill()
-{
-    return activeProcess == nullptr || activeProcess->killProcess();
+    return start (args.joinIntoString (" "), streamFlags);
 }
 
 //==============================================================================

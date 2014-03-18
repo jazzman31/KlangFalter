@@ -37,6 +37,7 @@ namespace PropertyFileConstants
 PropertiesFile::Options::Options()
     : commonToAllUsers (false),
       ignoreCaseOfKeyNames (false),
+      doNotSave (false),
       millisecondsBeforeSaving (3000),
       storageFormat (PropertiesFile::storeAsXML),
       processLock (nullptr)
@@ -89,8 +90,8 @@ File PropertiesFile::Options::getDefaultFile() const
     File dir (File::getSpecialLocation (commonToAllUsers ? File::commonApplicationDataDirectory
                                                          : File::userApplicationDataDirectory));
 
-    if (dir == File::nonexistent)
-        return File::nonexistent;
+    if (dir == File())
+        return File();
 
     dir = dir.getChildFile (folderName.isNotEmpty() ? folderName
                                                     : applicationName);
@@ -163,7 +164,8 @@ bool PropertiesFile::save()
 
     stopTimer();
 
-    if (file == File::nonexistent
+    if (options.doNotSave
+         || file == File()
          || file.isDirectory()
          || ! file.getParentDirectory().createDirectory())
         return false;
@@ -193,20 +195,18 @@ bool PropertiesFile::loadAsXml()
                 {
                     getAllProperties().set (name,
                                             e->getFirstChildElement() != nullptr
-                                                ? e->getFirstChildElement()->createDocument (String::empty, true)
+                                                ? e->getFirstChildElement()->createDocument ("", true)
                                                 : e->getStringAttribute (PropertyFileConstants::valueAttribute));
                 }
             }
 
             return true;
         }
-        else
-        {
-            // must be a pretty broken XML file we're trying to parse here,
-            // or a sign that this object needs an InterProcessLock,
-            // or just a failure reading the file.  This last reason is why
-            // we don't jassertfalse here.
-        }
+
+        // must be a pretty broken XML file we're trying to parse here,
+        // or a sign that this object needs an InterProcessLock,
+        // or just a failure reading the file.  This last reason is why
+        // we don't jassertfalse here.
     }
 
     return false;
@@ -215,18 +215,18 @@ bool PropertiesFile::loadAsXml()
 bool PropertiesFile::saveAsXml()
 {
     XmlElement doc (PropertyFileConstants::fileTag);
+    const StringPairArray& props = getAllProperties();
 
-    for (int i = 0; i < getAllProperties().size(); ++i)
+    for (int i = 0; i < props.size(); ++i)
     {
         XmlElement* const e = doc.createNewChildElement (PropertyFileConstants::valueTag);
-        e->setAttribute (PropertyFileConstants::nameAttribute, getAllProperties().getAllKeys() [i]);
+        e->setAttribute (PropertyFileConstants::nameAttribute, props.getAllKeys() [i]);
 
         // if the value seems to contain xml, store it as such..
-        if (XmlElement* const childElement = XmlDocument::parse (getAllProperties().getAllValues() [i]))
+        if (XmlElement* const childElement = XmlDocument::parse (props.getAllValues() [i]))
             e->addChildElement (childElement);
         else
-            e->setAttribute (PropertyFileConstants::valueAttribute,
-                             getAllProperties().getAllValues() [i]);
+            e->setAttribute (PropertyFileConstants::valueAttribute, props.getAllValues() [i]);
     }
 
     ProcessScopedLock pl (createProcessLock());
@@ -234,7 +234,7 @@ bool PropertiesFile::saveAsXml()
     if (pl != nullptr && ! pl->isLocked())
         return false; // locking failure..
 
-    if (doc.writeToFile (file, String::empty))
+    if (doc.writeToFile (file, String()))
     {
         needsWriting = false;
         return true;
@@ -257,10 +257,9 @@ bool PropertiesFile::loadAsBinary()
             GZIPDecompressorInputStream gzip (subStream);
             return loadAsBinary (gzip);
         }
-        else if (magicNumber == PropertyFileConstants::magicNumber)
-        {
+
+        if (magicNumber == PropertyFileConstants::magicNumber)
             return loadAsBinary (fileStream);
-        }
     }
 
     return false;
@@ -293,7 +292,7 @@ bool PropertiesFile::saveAsBinary()
         return false; // locking failure..
 
     TemporaryFile tempFile (file);
-    ScopedPointer <OutputStream> out (tempFile.getFile().createOutputStream());
+    ScopedPointer<OutputStream> out (tempFile.getFile().createOutputStream());
 
     if (out != nullptr)
     {
@@ -312,14 +311,17 @@ bool PropertiesFile::saveAsBinary()
             out->writeInt (PropertyFileConstants::magicNumber);
         }
 
-        const int numProperties = getAllProperties().size();
+        const StringPairArray& props = getAllProperties();
+        const int numProperties   = props.size();
+        const StringArray& keys   = props.getAllKeys();
+        const StringArray& values = props.getAllValues();
 
         out->writeInt (numProperties);
 
         for (int i = 0; i < numProperties; ++i)
         {
-            out->writeString (getAllProperties().getAllKeys() [i]);
-            out->writeString (getAllProperties().getAllValues() [i]);
+            out->writeString (keys[i]);
+            out->writeString (values[i]);
         }
 
         out = nullptr;

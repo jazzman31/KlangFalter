@@ -43,7 +43,7 @@ class JUCE_API  AudioSubsectionReader  : public AudioFormatReader
 {
 public:
     //==============================================================================
-    /** Creates a AudioSubsectionReader for a given data source.
+    /** Creates an AudioSubsectionReader for a given data source.
 
         @param sourceReader             the source reader from which we'll be taking data
         @param subsectionStartSample    the sample within the source reader which will be
@@ -67,12 +67,9 @@ public:
     bool readSamples (int** destSamples, int numDestChannels, int startOffsetInDestBuffer,
                       int64 startSampleInFile, int numSamples) override;
 
-    void readMaxLevels (int64 startSample,
-                        int64 numSamples,
-                        float& lowestLeft,
-                        float& highestLeft,
-                        float& lowestRight,
-                        float& highestRight) override;
+    void readMaxLevels (int64 startSample, int64 numSamples,
+                        float& lowestLeft,  float& highestLeft,
+                        float& lowestRight, float& highestRight) override;
 
 
 private:

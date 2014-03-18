@@ -110,7 +110,7 @@ namespace TimeHelpers
             const size_t numChars = wcsftime (buffer, bufferSize - 1, format.toUTF32(), tm);
            #endif
 
-            if (numChars > 0)
+            if (numChars > 0 || format.isEmpty())
                 return String (StringType (buffer),
                                StringType (buffer) + (int) numChars);
         }
@@ -409,8 +409,8 @@ String Time::getWeekdayName (const bool threeLetterVersion) const
 
 String Time::getMonthName (int monthNumber, const bool threeLetterVersion)
 {
-    const char* const shortMonthNames[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-    const char* const longMonthNames[]  = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+    static const char* const shortMonthNames[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    static const char* const longMonthNames[]  = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
 
     monthNumber %= 12;
 
@@ -420,8 +420,8 @@ String Time::getMonthName (int monthNumber, const bool threeLetterVersion)
 
 String Time::getWeekdayName (int day, const bool threeLetterVersion)
 {
-    const char* const shortDayNames[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-    const char* const longDayNames[]  = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+    static const char* const shortDayNames[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+    static const char* const longDayNames[]  = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 
     day %= 7;
 

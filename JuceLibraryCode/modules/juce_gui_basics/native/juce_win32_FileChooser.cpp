@@ -183,7 +183,7 @@ void FileChooser::showPlatformDialog (Array<File>& results, const String& title_
         if (! SHGetPathFromIDListW (list, files))
         {
             files[0] = 0;
-            info.returnedString = String::empty;
+            info.returnedString.clear();
         }
 
         LPMALLOC al;
@@ -198,7 +198,7 @@ void FileChooser::showPlatformDialog (Array<File>& results, const String& title_
     }
     else
     {
-        DWORD flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_HIDEREADONLY;
+        DWORD flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_HIDEREADONLY | OFN_ENABLESIZING;
 
         if (warnAboutOverwritingExistingFiles)
             flags |= OFN_OVERWRITEPROMPT;

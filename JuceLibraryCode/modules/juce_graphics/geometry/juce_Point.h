@@ -99,30 +99,34 @@ public:
     Point& operator-= (Point other) noexcept                        { x -= other.x; y -= other.y; return *this; }
 
     /** Multiplies two points together */
-    Point operator* (Point other) const noexcept                    { return Point (x * other.x, y * other.y); }
+    template <typename OtherType>
+    Point operator* (Point<OtherType> other) const noexcept         { return Point ((ValueType) (x * other.x), (ValueType) (y * other.y)); }
 
     /** Multiplies another point's coordinates to this one */
-    Point& operator*= (Point other) noexcept                        { x *= other.x; y *= other.y; return *this; }
+    template <typename OtherType>
+    Point& operator*= (Point<OtherType> other) noexcept             { *this = *this * other; return *this; }
 
-    /** Divides one points from another */
-    Point operator/ (Point other) const noexcept                    { return Point (x / other.x, y / other.y); }
+    /** Divides one point by another */
+    template <typename OtherType>
+    Point operator/ (Point<OtherType> other) const noexcept         { return Point ((ValueType) (x / other.x), (ValueType) (y / other.y)); }
 
-    /** Divides another point's coordinates to this one */
-    Point& operator/= (Point other) noexcept                        { x /= other.x; y /= other.y; return *this; }
+    /** Divides this point's coordinates by another */
+    template <typename OtherType>
+    Point& operator/= (Point<OtherType> other) noexcept             { *this = *this / other; return *this; }
 
-    /** Returns a point whose coordinates are multiplied by a given value. */
+    /** Returns a point whose coordinates are multiplied by a given scalar value. */
     template <typename FloatType>
     Point operator* (FloatType multiplier) const noexcept           { return Point ((ValueType) (x * multiplier), (ValueType) (y * multiplier)); }
 
-    /** Returns a point whose coordinates are divided by a given value. */
+    /** Returns a point whose coordinates are divided by a given scalar value. */
     template <typename FloatType>
     Point operator/ (FloatType divisor) const noexcept              { return Point ((ValueType) (x / divisor), (ValueType) (y / divisor)); }
 
-    /** Multiplies the point's coordinates by a value. */
+    /** Multiplies the point's coordinates by a scalar value. */
     template <typename FloatType>
     Point& operator*= (FloatType multiplier) noexcept               { x = (ValueType) (x * multiplier); y = (ValueType) (y * multiplier); return *this; }
 
-    /** Divides the point's coordinates by a value. */
+    /** Divides the point's coordinates by a scalar value. */
     template <typename FloatType>
     Point& operator/= (FloatType divisor) noexcept                  { x = (ValueType) (x / divisor); y = (ValueType) (y / divisor); return *this; }
 
@@ -147,7 +151,8 @@ public:
     */
     FloatType getAngleToPoint (Point other) const noexcept
     {
-        return static_cast<FloatType> (std::atan2 (other.x - x, y - other.y));
+        return static_cast<FloatType> (std::atan2 (static_cast<FloatType> (other.x - x),
+                                                   static_cast<FloatType> (y - other.y)));
     }
 
     /** Returns the point that would be reached by rotating this point clockwise
@@ -165,8 +170,8 @@ public:
     */
     Point<FloatType> getPointOnCircumference (float radius, float angle) const noexcept
     {
-        return Point<FloatType> (static_cast <FloatType> (x + radius * std::sin (angle)),
-                                 static_cast <FloatType> (y - radius * std::cos (angle)));
+        return Point<FloatType> (static_cast<FloatType> (x + radius * std::sin (angle)),
+                                 static_cast<FloatType> (y - radius * std::cos (angle)));
     }
 
     /** Taking this point to be the centre of an ellipse, this returns a point on its circumference.
@@ -176,8 +181,8 @@ public:
     */
     Point<FloatType> getPointOnCircumference (float radiusX, float radiusY, float angle) const noexcept
     {
-        return Point<FloatType> (static_cast <FloatType> (x + radiusX * std::sin (angle)),
-                                 static_cast <FloatType> (y - radiusY * std::cos (angle)));
+        return Point<FloatType> (static_cast<FloatType> (x + radiusX * std::sin (angle)),
+                                 static_cast<FloatType> (y - radiusY * std::cos (angle)));
     }
 
     /** Returns the dot-product of two points (x1 * x2 + y1 * y2). */
@@ -200,13 +205,13 @@ public:
 
     //==============================================================================
     /** Casts this point to a Point<int> object. */
-    Point<int> toInt() const noexcept                             { return Point<int> (static_cast <int> (x), static_cast<int> (y)); }
+    Point<int> toInt() const noexcept                             { return Point<int> (static_cast<int> (x), static_cast<int> (y)); }
 
     /** Casts this point to a Point<float> object. */
-    Point<float> toFloat() const noexcept                         { return Point<float> (static_cast <float> (x), static_cast<float> (y)); }
+    Point<float> toFloat() const noexcept                         { return Point<float> (static_cast<float> (x), static_cast<float> (y)); }
 
     /** Casts this point to a Point<double> object. */
-    Point<double> toDouble() const noexcept                       { return Point<double> (static_cast <double> (x), static_cast<double> (y)); }
+    Point<double> toDouble() const noexcept                       { return Point<double> (static_cast<double> (x), static_cast<double> (y)); }
 
     /** Returns the point as a string in the form "x, y". */
     String toString() const                                       { return String (x) + ", " + String (y); }

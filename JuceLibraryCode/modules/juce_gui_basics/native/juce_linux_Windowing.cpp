@@ -617,15 +617,19 @@ public:
 
     LowLevelGraphicsContext* createLowLevelContext() override
     {
+        sendDataChangeMessage();
         return new LowLevelGraphicsSoftwareRenderer (Image (this));
     }
 
-    void initialiseBitmapData (Image::BitmapData& bitmap, int x, int y, Image::BitmapData::ReadWriteMode) override
+    void initialiseBitmapData (Image::BitmapData& bitmap, int x, int y, Image::BitmapData::ReadWriteMode mode) override
     {
         bitmap.data = imageData + x * pixelStride + y * lineStride;
         bitmap.pixelFormat = pixelFormat;
         bitmap.lineStride = lineStride;
         bitmap.pixelStride = pixelStride;
+
+        if (mode != Image::BitmapData::readOnly)
+            sendDataChangeMessage();
     }
 
     ImagePixelData* clone() override
@@ -1345,10 +1349,12 @@ public:
             ScopedXLock xlock;
             updateKeyStates (keyEvent.keycode, true);
 
-            const char* oldLocale = ::setlocale (LC_ALL, 0);
+            String oldLocale (::setlocale (LC_ALL, 0));
             ::setlocale (LC_ALL, "");
             XLookupString (&keyEvent, utf8, sizeof (utf8), &sym, 0);
-            ::setlocale (LC_ALL, oldLocale);
+
+            if (oldLocale.isNotEmpty())
+                ::setlocale (LC_ALL, oldLocale.toRawUTF8());
 
             unicodeChar = *CharPointer_UTF8 (utf8);
             keyCode = (int) unicodeChar;
@@ -1362,7 +1368,7 @@ public:
         const ModifierKeys oldMods (currentModifiers);
         bool keyPressed = false;
 
-        if ((sym & 0xff00) == 0xff00)
+        if ((sym & 0xff00) == 0xff00 || sym == XK_ISO_Left_Tab)
         {
             switch (sym)  // Translate keypad
             {

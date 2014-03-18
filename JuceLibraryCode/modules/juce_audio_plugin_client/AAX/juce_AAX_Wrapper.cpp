@@ -42,6 +42,7 @@
 #ifdef __clang__
  #pragma clang diagnostic push
  #pragma clang diagnostic ignored "-Wnon-virtual-dtor"
+ #pragma clang diagnostic ignored "-Wsign-conversion"
 #endif
 
 #include "AAX_Exports.cpp"
@@ -123,8 +124,7 @@ struct AAXClasses
             case 6:   return AAX_eStemFormat_5_1;
             case 7:   return AAX_eStemFormat_7_0_DTS;
             case 8:   return AAX_eStemFormat_7_1_DTS;
-
-            default:  jassertfalse; break; // hmm - not a valid number of chans..
+            default:  jassertfalse; break;
         }
 
         return AAX_eStemFormat_None;
@@ -138,15 +138,43 @@ struct AAXClasses
             case AAX_eStemFormat_Mono:      return 1;
             case AAX_eStemFormat_Stereo:    return 2;
             case AAX_eStemFormat_LCR:       return 3;
+            case AAX_eStemFormat_LCRS:
             case AAX_eStemFormat_Quad:      return 4;
             case AAX_eStemFormat_5_0:       return 5;
-            case AAX_eStemFormat_5_1:       return 6;
+            case AAX_eStemFormat_5_1:
+            case AAX_eStemFormat_6_0:       return 6;
+            case AAX_eStemFormat_6_1:
+            case AAX_eStemFormat_7_0_SDDS:
             case AAX_eStemFormat_7_0_DTS:   return 7;
+            case AAX_eStemFormat_7_1_SDDS:
             case AAX_eStemFormat_7_1_DTS:   return 8;
-            default:  jassertfalse; break; // hmm - not a valid number of chans..
+            default:                        jassertfalse; break;
         }
 
         return 0;
+    }
+
+    static const char* getSpeakerArrangementString (AAX_EStemFormat format) noexcept
+    {
+        switch (format)
+        {
+            case AAX_eStemFormat_Mono:      return "M";
+            case AAX_eStemFormat_Stereo:    return "L R";
+            case AAX_eStemFormat_LCR:       return "L C R";
+            case AAX_eStemFormat_LCRS:      return "L C R S";
+            case AAX_eStemFormat_Quad:      return "L R Ls Rs";
+            case AAX_eStemFormat_5_0:       return "L C R Ls Rs";
+            case AAX_eStemFormat_5_1:       return "L C R Ls Rs LFE";
+            case AAX_eStemFormat_6_0:       return "L C R Ls Cs Rs";
+            case AAX_eStemFormat_6_1:       return "L C R Ls Cs Rs LFE";
+            case AAX_eStemFormat_7_0_SDDS:  return "L Lc C Rc R Ls Rs";
+            case AAX_eStemFormat_7_1_SDDS:  return "L Lc C Rc R Ls Rs LFE";
+            case AAX_eStemFormat_7_0_DTS:   return "L C R Lss Rss Lsr Rsr";
+            case AAX_eStemFormat_7_1_DTS:   return "L C R Lss Rss Lsr Rsr LFE";
+            default:                        break;
+        }
+
+        return nullptr;
     }
 
     //==============================================================================
@@ -414,7 +442,7 @@ struct AAXClasses
             if (chunkID != juceChunkType)
                 return AAX_CEffectParameters::GetChunkSize (chunkID, oSize);
 
-            tempFilterData.setSize (0);
+            tempFilterData.reset();
             pluginInstance->getStateInformation (tempFilterData);
             *oSize = (uint32_t) tempFilterData.getSize();
             return AAX_SUCCESS;
@@ -428,9 +456,9 @@ struct AAXClasses
             if (tempFilterData.getSize() == 0)
                 pluginInstance->getStateInformation (tempFilterData);
 
-            oChunk->fSize = (uint32_t) tempFilterData.getSize();
+            oChunk->fSize = (int32_t) tempFilterData.getSize();
             tempFilterData.copyTo (oChunk->fData, 0, tempFilterData.getSize());
-            tempFilterData.setSize (0);
+            tempFilterData.reset();
 
             return AAX_SUCCESS;
         }
@@ -518,7 +546,7 @@ struct AAXClasses
             return AAX_SUCCESS;
         }
 
-        AAX_Result SetParameterNormalizedValue (AAX_CParamID paramID, double newValue) const
+        AAX_Result SetParameterNormalizedValue (AAX_CParamID paramID, double newValue) override
         {
             if (! isBypassParam (paramID))
             {
@@ -531,7 +559,7 @@ struct AAXClasses
             return AAX_SUCCESS;
         }
 
-        AAX_Result SetParameterNormalizedRelative (AAX_CParamID paramID, double newValue) const
+        AAX_Result SetParameterNormalizedRelative (AAX_CParamID paramID, double newValue) override
         {
             if (! isBypassParam (paramID))
             {
@@ -651,6 +679,7 @@ struct AAXClasses
 
         void audioProcessorChanged (AudioProcessor* processor) override
         {
+            ++mNumPlugInChanges;
             check (Controller()->SetSignalLatency (processor->getLatencySamples()));
         }
 
@@ -673,7 +702,7 @@ struct AAXClasses
         }
 
         void process (const float* const* inputs, float* const* outputs, const int bufferSize,
-                      const bool bypass, AAX_IMIDINode* midiNodeIn, AAX_IMIDINode* midiNodeOut)
+                      const bool bypass, AAX_IMIDINode* midiNodeIn, AAX_IMIDINode* midiNodesOut)
         {
             const int numIns  = pluginInstance->getNumInputChannels();
             const int numOuts = pluginInstance->getNumOutputChannels();
@@ -681,9 +710,9 @@ struct AAXClasses
             if (numOuts >= numIns)
             {
                 for (int i = 0; i < numIns; ++i)
-                    memcpy (outputs[i], inputs[i], bufferSize * sizeof (float));
+                    memcpy (outputs[i], inputs[i], (size_t) bufferSize * sizeof (float));
 
-                process (outputs, numOuts, bufferSize, bypass, midiNodeIn, midiNodeOut);
+                process (outputs, numOuts, bufferSize, bypass, midiNodeIn, midiNodesOut);
             }
             else
             {
@@ -694,14 +723,14 @@ struct AAXClasses
 
                 for (int i = 0; i < numOuts; ++i)
                 {
-                    memcpy (outputs[i], inputs[i], bufferSize * sizeof (float));
+                    memcpy (outputs[i], inputs[i], (size_t) bufferSize * sizeof (float));
                     channels[i] = outputs[i];
                 }
 
                 for (int i = numOuts; i < numIns; ++i)
                     channels[i] = const_cast <float*> (inputs[i]);
 
-                process (channels, numIns, bufferSize, bypass, midiNodeIn, midiNodeOut);
+                process (channels, numIns, bufferSize, bypass, midiNodeIn, midiNodesOut);
             }
         }
 
@@ -736,11 +765,14 @@ struct AAXClasses
         };
 
         void process (float* const* channels, const int numChans, const int bufferSize,
-                      const bool bypass, AAX_IMIDINode* midiNodeIn, AAX_IMIDINode* midiNodeOut)
+                      const bool bypass, AAX_IMIDINode* midiNodeIn, AAX_IMIDINode* midiNodesOut)
         {
             AudioSampleBuffer buffer (channels, numChans, bufferSize);
 
             midiBuffer.clear();
+
+            (void) midiNodeIn;
+            (void) midiNodesOut;
 
            #if JucePlugin_WantsMidiInput
             {
@@ -752,7 +784,7 @@ struct AAXClasses
                     // (This 8-byte alignment is a workaround to a bug in the AAX SDK. Hopefully can be
                     // removed in future when the packet structure size is fixed)
                     const AAX_CMidiPacket& m = *addBytesToPointer (midiStream->mBuffer,
-                                                                   i * ((sizeof (AAX_CMidiPacket) + 7) & ~7));
+                                                                   i * ((sizeof (AAX_CMidiPacket) + 7) & ~(size_t) 7));
                     jassert ((int) m.mTimestamp < bufferSize);
                     midiBuffer.addEvent (m.mData, (int) m.mLength,
                                          jlimit (0, (int) bufferSize - 1, (int) m.mTimestamp));
@@ -792,14 +824,14 @@ struct AAXClasses
                     {
                         packet.mTimestamp   = (uint32_t) midiEventPosition;
                         packet.mLength      = (uint32_t) midiEventSize;
-                        memcpy (packet.mData, midiEventData, midiEventSize);
+                        memcpy (packet.mData, midiEventData, (size_t) midiEventSize);
 
-                        check (midiNodeOut->PostMIDIPacket (&packet));
+                        check (midiNodesOut->PostMIDIPacket (&packet));
                     }
                 }
             }
            #else
-            (void) midiNodeOut;
+            (void) midiNodesOut;
            #endif
         }
 
@@ -833,7 +865,7 @@ struct AAXClasses
                                                  audioProcessor.isParameterAutomatable (parameterIndex));
 
                 parameter->AddShortenedName (audioProcessor.getParameterName (parameterIndex, 4).toRawUTF8());
-                parameter->SetNumberOfSteps (audioProcessor.getParameterNumSteps (parameterIndex));
+                parameter->SetNumberOfSteps ((uint32_t) audioProcessor.getParameterNumSteps (parameterIndex));
                 parameter->SetType (AAX_eParameterType_Continuous);
                 mParameterManager.AddParameter (parameter);
             }
@@ -850,6 +882,9 @@ struct AAXClasses
             const int numberOfOutputChannels = getNumChannelsForStemFormat (outputStemFormat);
 
             AudioProcessor& audioProcessor = getPluginInstance();
+
+            audioProcessor.setSpeakerArrangement (getSpeakerArrangementString (inputStemFormat),
+                                                  getSpeakerArrangementString (outputStemFormat));
 
             audioProcessor.setPlayConfigDetails (numberOfInputChannels, numberOfOutputChannels, sampleRate, lastBufferSize);
             audioProcessor.prepareToPlay (sampleRate, lastBufferSize);
@@ -927,6 +962,13 @@ struct AAXClasses
         // This value needs to match the RTAS wrapper's Type ID, so that
         // the host knows that the RTAS/AAX plugins are equivalent.
         properties->AddProperty (AAX_eProperty_PlugInID_Native,     'jcaa' + channelConfigIndex);
+        properties->AddProperty (AAX_eProperty_PlugInID_AudioSuite, 'jyaa' + channelConfigIndex);
+
+       #if JucePlugin_AAXDisableMultiMono
+        properties->AddProperty (AAX_eProperty_Constraint_MultiMonoSupport, false);
+       #else
+        properties->AddProperty (AAX_eProperty_Constraint_MultiMonoSupport, true);
+       #endif
 
         check (desc.AddProcessProc_Native (algorithmProcessCallback, properties));
     }

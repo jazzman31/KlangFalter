@@ -27,8 +27,9 @@ class MouseInputSourceInternal   : private AsyncUpdater
 public:
     //==============================================================================
     MouseInputSourceInternal (const int i, const bool isMouse)
-        : index (i), isMouseDevice (isMouse), lastPeer (nullptr),
-          isUnboundedMouseModeOn (false), isCursorVisibleUntilOffscreen (false), currentCursorHandle (nullptr),
+        : index (i), isMouseDevice (isMouse),
+          isUnboundedMouseModeOn (false), isCursorVisibleUntilOffscreen (false),
+          lastPeer (nullptr), currentCursorHandle (nullptr),
           mouseEventCounter (0), mouseMovedSignificantlySincePressed (false)
     {
     }
@@ -63,18 +64,18 @@ public:
         {
             pos = peer->globalToLocal (pos);
             Component& peerComp = peer->getComponent();
-            return comp.getLocalPoint (&peerComp, Component::ComponentHelpers::unscaledScreenPosToScaled (peerComp, pos));
+            return comp.getLocalPoint (&peerComp, ScalingHelpers::unscaledScreenPosToScaled (peerComp, pos));
         }
 
-        return comp.getLocalPoint (nullptr, Component::ComponentHelpers::unscaledScreenPosToScaled (comp, pos));
+        return comp.getLocalPoint (nullptr, ScalingHelpers::unscaledScreenPosToScaled (comp, pos));
     }
 
     Component* findComponentAt (Point<int> screenPos)
     {
         if (ComponentPeer* const peer = getPeer())
         {
-            Point<int> relativePos (Component::ComponentHelpers::unscaledScreenPosToScaled (peer->getComponent(),
-                                                                                            peer->globalToLocal (screenPos)));
+            Point<int> relativePos (ScalingHelpers::unscaledScreenPosToScaled (peer->getComponent(),
+                                                                               peer->globalToLocal (screenPos)));
             Component& comp = peer->getComponent();
 
             // (the contains() call is needed to test for overlapping desktop windows)
@@ -89,14 +90,14 @@ public:
     {
         // This needs to return the live position if possible, but it mustn't update the lastScreenPos
         // value, because that can cause continuity problems.
-        return Component::ComponentHelpers::unscaledScreenPosToScaled
+        return ScalingHelpers::unscaledScreenPosToScaled
                     (unboundedMouseOffset + (isMouseDevice ? MouseInputSource::getCurrentRawMousePosition()
                                                            : lastScreenPos));
     }
 
     void setScreenPosition (Point<int> p)
     {
-        MouseInputSource::setRawMousePosition (Component::ComponentHelpers::scaledScreenPosToUnscaled (p));
+        MouseInputSource::setRawMousePosition (ScalingHelpers::scaledScreenPosToUnscaled (p));
     }
 
     //==============================================================================
@@ -344,7 +345,7 @@ public:
 
     //==============================================================================
     Time getLastMouseDownTime() const noexcept              { return mouseDowns[0].time; }
-    Point<int> getLastMouseDownPosition() const noexcept    { return Component::ComponentHelpers::unscaledScreenPosToScaled (mouseDowns[0].position); }
+    Point<int> getLastMouseDownPosition() const noexcept    { return ScalingHelpers::unscaledScreenPosToScaled (mouseDowns[0].position); }
 
     int getNumberOfMultipleClicks() const noexcept
     {
@@ -463,12 +464,13 @@ public:
     Point<int> lastScreenPos;
     ModifierKeys buttonState;
 
+    Point<int> unboundedMouseOffset;
+    bool isUnboundedMouseModeOn, isCursorVisibleUntilOffscreen;
+
 private:
     WeakReference<Component> componentUnderMouse;
     ComponentPeer* lastPeer;
 
-    Point<int> unboundedMouseOffset;
-    bool isUnboundedMouseModeOn, isCursorVisibleUntilOffscreen;
     void* currentCursorHandle;
     int mouseEventCounter;
 
@@ -550,6 +552,7 @@ bool MouseInputSource::hasMouseMovedSignificantlySincePressed() const noexcept  
 bool MouseInputSource::canDoUnboundedMovement() const noexcept          { return isMouse(); }
 void MouseInputSource::enableUnboundedMouseMovement (bool isEnabled, bool keepCursorVisibleUntilOffscreen) const
                                                                         { pimpl->enableUnboundedMouseMovement (isEnabled, keepCursorVisibleUntilOffscreen); }
+bool MouseInputSource::isUnboundedMouseMovementEnabled() const          { return pimpl->isUnboundedMouseModeOn; }
 bool MouseInputSource::hasMouseCursor() const noexcept                  { return isMouse(); }
 void MouseInputSource::showMouseCursor (const MouseCursor& cursor)      { pimpl->showMouseCursor (cursor, false); }
 void MouseInputSource::hideCursor()                                     { pimpl->hideCursor(); }
